@@ -1,0 +1,11 @@
+server:
+  bind:
+    host: 0.0.0.0
+    port: 80
+
+metadata:
+  identification:
+    title: My GeoAPI
+    description: pygeoapi instance
+
+resources: {}

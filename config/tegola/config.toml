@@ -1,0 +1,26 @@
+[webserver]
+port = ":8080"
+
+[[providers]]
+name = "postgis"
+type = "postgis"
+host = "postgis"
+port = 5432
+database = "gisdb"
+user = "gisadmin"
+password = "StrongPassword123"
+ssl_mode = "disable"
+
+  [[providers.layers]]
+  name = "example_layer"
+  geometry_fieldname = "geom"
+  id_fieldname = "id"
+  sql = "SELECT id, geom FROM public.example_layer WHERE geom && !BBOX!"
+
+[[maps]]
+name = "example"
+
+  [[maps.layers]]
+  provider_layer = "postgis.example_layer"
+  min_zoom = 0
+  max_zoom = 22
