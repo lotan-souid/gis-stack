@@ -25,7 +25,7 @@ services:
     ports:
       - "${MAPSTORE_PORT}:8080"
     volumes:
-      - ./config/geostore-datasource-ovr-postgres.properties:/usr/local/tomcat/conf/geostore-datasource-ovr.properties
+      - ./config/geostore-datasource-ovr-postgres.properties:/usr/local/tomcat/conf/geostore-datasource-ovr.properties:ro
     environment:
       JAVA_OPTS: "-Dgeostore-ovr=file:///usr/local/tomcat/conf/geostore-datasource-ovr.properties"
     depends_on:
@@ -118,6 +118,53 @@ services:
       - "${TILESERVER_PORT}:80"
     volumes:
       - ./data/tileserver-gl:/data
+    restart: unless-stopped
+    networks:
+      - gis-network
+
+  pygeoapi:
+    image: geopython/pygeoapi:${PYGEOAPI_VERSION}
+    ports:
+      - "${PYGEOAPI_PORT}:80"
+    volumes:
+      - ./config/pygeoapi/config.yml:/pygeoapi/local.config.yml:ro
+    depends_on:
+      - postgis
+    restart: unless-stopped
+    networks:
+      - gis-network
+
+  martin:
+    image: ghcr.io/maplibre/martin:${MARTIN_VERSION}
+    ports:
+      - "${MARTIN_PORT}:3000"
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
+    depends_on:
+      - postgis
+    restart: unless-stopped
+    networks:
+      - gis-network
+
+  tegola:
+    image: gospatial/tegola:${TEGOLA_VERSION}
+    command: ["serve", "--config", "/opt/tegola_config/config.toml"]
+    ports:
+      - "${TEGOLA_PORT}:8080"
+    volumes:
+      - ./config/tegola:/opt/tegola_config:ro
+    depends_on:
+      - postgis
+    restart: unless-stopped
+    networks:
+      - gis-network
+
+  mapfish:
+    image: camptocamp/mapfish_print:${MAPFISH_VERSION}
+    ports:
+      - "${MAPFISH_PORT}:8080"
+    volumes:
+      - ./config/mapfish/print-apps:/usr/local/tomcat/webapps/ROOT/print-apps:ro
     restart: unless-stopped
     networks:
       - gis-network
