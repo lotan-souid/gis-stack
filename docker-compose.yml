@@ -126,11 +126,18 @@ services:
     image: geopython/pygeoapi:${PYGEOAPI_VERSION}
     ports:
       - "${PYGEOAPI_PORT}:80"
+
+    environment:
+      PYGEOAPI_CONFIG: /pygeoapi/config/config.yml
+
     volumes:
-      - ./config/pygeoapi/config.yml:/pygeoapi/local.config.yml:ro
+      - ./config/pygeoapi:/pygeoapi/config:ro
+
     depends_on:
       - postgis
+
     restart: unless-stopped
+
     networks:
       - gis-network
 
