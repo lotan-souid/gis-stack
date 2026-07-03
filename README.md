@@ -2,24 +2,131 @@
 
 Version: **6.0.1**
 
-Docker Compose stack for a GIS platform, including:
+A self-contained GIS platform delivered as a single Docker Compose stack. It
+bundles a spatial database with a broad set of OGC services, tile/feature
+servers, an administration UI, and a web map client — all wired together on one
+private Docker network so they can talk to each other by service name.
 
-- GeoServer
-- MapStore2
-- PostGIS
-- Solr
-- pg_tileserv
-- pg_featureserv
-- pgAdmin
-- TileServer-GL
-- pygeoapi
-- Martin
-- Tegola
-- MapFish Print
+## Architecture
+
+At the center of the stack is **PostGIS**, the spatial database. Almost every
+other service is a consumer of that database: the tile and feature servers read
+geometries from it, and the web client and admin tools connect back to it. The
+services are grouped by role below.
+
+```
+                         ┌──────────────┐
+                         │   MapStore2  │  web map client (UI)
+                         └──────┬───────┘
+                                │
+   ┌───────────────┬───────────┼──────────────┬────────────────┐
+   │               │           │              │                │
+┌──┴───┐   ┌───────┴─────┐ ┌───┴─────┐ ┌──────┴─────┐  ┌────────┴────┐
+│Geo-  │   │ pg_tileserv │ │ Martin  │ │  Tegola    │  │  pygeoapi   │
+│server│   │ pg_feature- │ │         │ │            │  │  (OGC API)  │
+│(OGC) │   │ serv        │ │ (MVT)   │ │  (MVT)     │  │             │
+└──┬───┘   └──────┬──────┘ └────┬────┘ └─────┬──────┘  └──────┬──────┘
+   │              │             │            │                │
+   └──────────────┴─────────────┼────────────┴────────────────┘
+                                │
+                         ┌──────┴───────┐
+                         │   PostGIS    │  spatial database (source of truth)
+                         └──────┬───────┘
+                                │
+                         ┌──────┴───────┐
+                         │   pgAdmin    │  database administration UI
+                         └──────────────┘
+```
+
+All containers share a single bridge network, `gis-network`, defined at the
+bottom of `docker-compose.yml`. Services reference each other by their compose
+service name (e.g. the tile servers point their `DATABASE_URL` at the host
+`postgis`), so no host-level networking is required between them.
+
+## Services
+
+### Data layer
+
+| Service      | Role                                                                 |
+| ------------ | -------------------------------------------------------------------- |
+| **PostGIS**  | Spatial database — the source of truth for all geometry data.        |
+| **pgAdmin**  | Web UI for administering the PostGIS database.                       |
+
+### OGC / API services
+
+| Service         | Role                                                                       |
+| --------------- | -------------------------------------------------------------------------- |
+| **GeoServer**   | Full OGC server (WMS/WFS/WCS/WMTS); publishes styled layers.               |
+| **pygeoapi**    | OGC API — Features / Coverages / Tiles, driven by a YAML config.          |
+
+### Tile & feature servers
+
+| Service            | Role                                                              |
+| ------------------ | ---------------------------------------------------------------- |
+| **pg_tileserv**    | Serves Mapbox Vector Tiles straight from PostGIS tables.         |
+| **pg_featureserv** | Serves GeoJSON features (OGC API — Features) from PostGIS.       |
+| **Martin**         | High-performance vector-tile server for PostGIS.                 |
+| **Tegola**         | Vector-tile server configured via `config/tegola/config.toml`.   |
+| **TileServer-GL**  | Serves raster/vector basemaps and styles from local MBTiles.     |
+
+### Client & utilities
+
+| Service          | Role                                                                    |
+| ---------------- | ----------------------------------------------------------------------- |
+| **MapStore2**    | Web map client / portal for building and sharing maps.                  |
+| **Solr**         | Search index (e.g. Blacklight core) for catalog/metadata search.        |
+| **MapFish Print**| Print/report generation service for producing PDF maps.                 |
+
+## Configuration
+
+Runtime settings are supplied through environment variables and a set of
+mounted config files.
+
+- **`.env`** — copied from `.env.example`; holds ports, image versions, and
+  credentials. Each service in `docker-compose.yml` reads its port, version,
+  and secrets from here (`${...}` substitutions).
+- **`config/`** — service-specific config files bind-mounted read-only into the
+  containers:
+  - `config/pygeoapi/config.yml` — pygeoapi server and resource definitions.
+  - `config/tegola/config.toml` — Tegola providers, layers, and map definitions.
+  - `config/mapfish/print-apps/` — MapFish Print layout/app definitions.
+  - `config/geostore-datasource-ovr-postgres.properties` — MapStore's GeoStore
+    datasource override, pointing it at PostGIS. Referenced by
+    `docker-compose.yml`; provide this file before starting MapStore.
+- **`data/`** — bind-mounted persistent volumes (PostGIS data, GeoServer data
+  dir, Solr, pgAdmin, TileServer-GL, …). This directory is git-ignored.
+
+## Ports
+
+Host ports are defined in `.env` (defaults shown):
+
+| Service        | Default host port |
+| -------------- | ----------------- |
+| GeoServer      | 8090              |
+| MapStore2      | 8091              |
+| PostGIS        | 5433              |
+| pgAdmin        | 5050              |
+| Solr           | 8983              |
+| pg_tileserv    | 7800              |
+| pg_featureserv | 9000              |
+| TileServer-GL  | 8081              |
+| pygeoapi       | 5000              |
+| Martin         | 3000              |
+| Tegola         | 8082              |
+| MapFish Print  | 8084              |
 
 ## Setup
 
-1. Copy `.env.example` to `.env` and fill in the values.
-2. Run `docker compose up -d`.
+1. Copy `.env.example` to `.env` and fill in the values (credentials, ports,
+   image versions).
+2. Start the stack:
+   ```bash
+   docker compose up -d
+   ```
+3. Check service health:
+   ```bash
+   docker compose ps
+   ```
 
-Service configuration files live under [config/](config/).
+Several services define healthchecks (GeoServer, PostGIS, Solr) so their
+container status reflects readiness.
