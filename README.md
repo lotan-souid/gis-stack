@@ -113,8 +113,8 @@ mounted config files.
   - `config/tegola/config.toml` — Tegola providers, layers, and map definitions.
   - `config/mapfish/print-apps/` — MapFish Print layout/app definitions.
   - `config/geostore-datasource-ovr-postgres.properties` — MapStore's GeoStore
-    datasource override, pointing it at PostGIS. Referenced by
-    `docker-compose.yml`; provide this file before starting MapStore.
+    datasource override, pointing it at PostGIS. Ships with example values that
+    mirror `.env.example`; keep its credentials in sync with your `.env`.
 - **`data/`** — bind-mounted persistent volumes (PostGIS data, GeoServer data
   dir, Solr, pgAdmin, TileServer-GL, GeoLibre conversion root, …). This
   directory is git-ignored.
@@ -154,3 +154,22 @@ Host ports are defined in `.env` (defaults shown):
 
 Several services define healthchecks (GeoServer, PostGIS, Solr) so their
 container status reflects readiness.
+
+## Deploying with Portainer (from GitHub)
+
+The stack can be deployed as a Portainer **Git repository** stack:
+
+1. In Portainer: **Stacks → Add stack → Repository**.
+2. Repository URL: this repo; compose path: `docker-compose.yml`; reference the
+   desired branch/tag (e.g. `main` or `6.1.0`).
+3. **Environment variables:** `.env` is intentionally git-ignored (secrets stay
+   out of the repo), so Portainer will not load it automatically. Add the
+   variables from `.env.example` under the stack's **Environment variables**
+   section — otherwise the `${...}` substitutions resolve to empty and the
+   containers fail to start.
+4. Deploy. Docker creates the bind-mounted `./data/*` directories on first run;
+   the read-only `./config/*` files are served straight from the cloned repo.
+
+If you connect MapStore's GeoStore to PostGIS, make sure the credentials in
+`config/geostore-datasource-ovr-postgres.properties` match the values you set in
+Portainer.
