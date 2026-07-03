@@ -1,0 +1,16 @@
+# Environment
+.env
+
+# Runtime data (bind-mounted volumes)
+data/
+
+# Claude Code local settings
+.claude/
+
+# Editor / IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
