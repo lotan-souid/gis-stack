@@ -1,6 +1,6 @@
 # GIS Stack
 
-Version: **6.0.1**
+Version: **6.1.0**
 
 A self-contained GIS platform delivered as a single Docker Compose stack. It
 bundles a spatial database with a broad set of OGC services, tile/feature
@@ -74,8 +74,30 @@ service name (e.g. the tile servers point their `DATABASE_URL` at the host
 | Service          | Role                                                                    |
 | ---------------- | ----------------------------------------------------------------------- |
 | **MapStore2**    | Web map client / portal for building and sharing maps.                  |
+| **GeoLibre**     | Lightweight, browser-based GIS client for exploration and analysis.     |
 | **Solr**         | Search index (e.g. Blacklight core) for catalog/metadata search.        |
 | **MapFish Print**| Print/report generation service for producing PDF maps.                 |
+
+#### GeoLibre
+
+[GeoLibre](https://github.com/opengeos/GeoLibre) is a lightweight, cloud-native
+GIS client that runs entirely in the browser. Unlike MapStore2 (a server-backed
+portal tied to PostGIS/GeoServer), GeoLibre does **not** connect to the database
+directly — it processes vector data client-side via DuckDB-WASM Spatial and
+renders with MapLibre GL + deck.gl. It complements the stack in two ways:
+
+- **As a client**, it consumes the stack's outputs: vector tiles from
+  Martin / pg_tileserv / Tegola, OGC API — Features from pygeoapi /
+  pg_featureserv, WMS/WFS from GeoServer, and PMTiles / COG files.
+- **As a conversion utility**, its bundled Python sidecar (served under
+  `/sidecar`) converts vectors to FlatGeobuf / PMTiles and rasters to COG, and
+  runs Whitebox geoprocessing tools. The sidecar reads and writes inside the
+  container's `/data` directory (`GEOLIBRE_CONVERSION_ROOTS`), bind-mounted from
+  `./data/geolibre` — a convenient place to prepare tiles/COGs that
+  TileServer-GL and the tile servers then serve.
+
+The container serves a static nginx frontend on port 80; the sidecar starts
+automatically alongside it. No database connection is required.
 
 ## Configuration
 
@@ -94,7 +116,8 @@ mounted config files.
     datasource override, pointing it at PostGIS. Referenced by
     `docker-compose.yml`; provide this file before starting MapStore.
 - **`data/`** — bind-mounted persistent volumes (PostGIS data, GeoServer data
-  dir, Solr, pgAdmin, TileServer-GL, …). This directory is git-ignored.
+  dir, Solr, pgAdmin, TileServer-GL, GeoLibre conversion root, …). This
+  directory is git-ignored.
 
 ## Ports
 
@@ -114,6 +137,7 @@ Host ports are defined in `.env` (defaults shown):
 | Martin         | 3000              |
 | Tegola         | 8082              |
 | MapFish Print  | 8084              |
+| GeoLibre       | 8085              |
 
 ## Setup
 
