@@ -1,5 +1,7 @@
 # Environment
 .env
+.env.bak
+*.bak
 
 # Runtime data (bind-mounted volumes)
 data/
