@@ -1,184 +1,228 @@
 # GIS Stack — docker-compose.yml
-# Version: 7.0.0  (keep in sync with VERSION; see README "Versioning")
+# Version: 8.0.0  (keep in sync with VERSION; see README "Versioning")
 
-x-gis-stack-version: "7.0.0"
+x-gis-stack-version: "8.0.0"
+
+# Settings shared by every service (merged with `<<: *common`).
+x-common: &common
+  restart: unless-stopped
+  networks:
+    - gis-network
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+# Read-only connection used by the tile/feature servers (see postgis-init).
+x-reader-db-url: &reader-db-url "postgres://${GIS_READER_USER}:${GIS_READER_PASSWORD:?set GIS_READER_PASSWORD}@postgis:5432/${POSTGRES_DB}"
+
+# Wait until postgis-init has created the roles/databases.
+x-depends-on-db: &depends-on-db
+  postgis-init:
+    condition: service_completed_successfully
 
 services:
+  # ---------------------------------------------------------------- data layer
+  postgis:
+    <<: *common
+    image: postgis/postgis:${POSTGIS_VERSION}
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:${POSTGIS_PORT}:5432"
+    volumes:
+      - ${DATA_DIR:-./data}/postgis:/var/lib/postgresql/data:Z
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}"
+    healthcheck:
+      # -h localhost: only report ready once the real server accepts TCP,
+      # not while the first-run init server is up on the unix socket.
+      test: ["CMD-SHELL", "pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB} || exit 1"]
+      interval: 10s
+      retries: 6
+      timeout: 5s
+      start_period: 30s
+
+  # One-shot job, runs on every `up`: creates the read-only role and the
+  # GeoStore database. Idempotent — safe on new and existing databases.
+  postgis-init:
+    <<: *common
+    image: postgis/postgis:${POSTGIS_VERSION}
+    restart: "no"
+    entrypoint: ["sh", "/bootstrap/bootstrap.sh"]
+    volumes:
+      - ./config/postgis:/bootstrap:ro
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      GIS_READER_USER: "${GIS_READER_USER}"
+      GIS_READER_PASSWORD: "${GIS_READER_PASSWORD}"
+      GEOSTORE_DB: "${GEOSTORE_DB}"
+      GEOSTORE_USER: "${GEOSTORE_USER}"
+      GEOSTORE_PASSWORD: "${GEOSTORE_PASSWORD:?set GEOSTORE_PASSWORD}"
+    depends_on:
+      postgis:
+        condition: service_healthy
+
+  pgadmin:
+    <<: *common
+    image: dpage/pgadmin4:${PGADMIN_VERSION}
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:${PGADMIN_PORT}:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "${PGADMIN_DEFAULT_EMAIL}"
+      PGADMIN_DEFAULT_PASSWORD: "${PGADMIN_DEFAULT_PASSWORD:?set PGADMIN_DEFAULT_PASSWORD}"
+    volumes:
+      - ${DATA_DIR:-./data}/pgadmin:/var/lib/pgadmin
+    depends_on:
+      postgis:
+        condition: service_healthy
+
+  # ------------------------------------------------------ OGC / API services
   geoserver:
+    <<: *common
     image: docker.osgeo.org/geoserver:${GEOSERVER_VERSION}
     ports:
-      - "${GEOSERVER_PORT}:8080"
+      - "${BIND_ADDR:-0.0.0.0}:${GEOSERVER_PORT}:8080"
     volumes:
-      - ./data/geoserver:/opt/geoserver_data/:Z
+      - ${DATA_DIR:-./data}/geoserver:/opt/geoserver_data/:Z
     environment:
       ROOT_WEBAPP_REDIRECT: "true"
       GEOSERVER_ADMIN_USER: "${GEOSERVER_ADMIN_USER}"
-      GEOSERVER_ADMIN_PASSWORD: "${GEOSERVER_ADMIN_PASSWORD}"
+      GEOSERVER_ADMIN_PASSWORD: "${GEOSERVER_ADMIN_PASSWORD:?set GEOSERVER_ADMIN_PASSWORD}"
+      INITIAL_MEMORY: "${GEOSERVER_INITIAL_MEMORY:-1G}"
+      MAXIMUM_MEMORY: "${GEOSERVER_MAX_MEMORY:-2G}"
     healthcheck:
       test: ["CMD-SHELL", "curl --fail http://localhost:8080/geoserver/web/wicket/resource/org.geoserver.web.GeoServerBasePage/img/logo.png || exit 1"]
       interval: 1m
       retries: 3
       timeout: 20s
-    restart: unless-stopped
-    networks:
-      - gis-network
+      start_period: 2m
 
+  pygeoapi:
+    <<: *common
+    image: geopython/pygeoapi:${PYGEOAPI_VERSION}
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:${PYGEOAPI_PORT}:80"
+    environment:
+      PYGEOAPI_CONFIG: /pygeoapi/config/config.yml
+      PYGEOAPI_SERVER_URL: "${PYGEOAPI_SERVER_URL:-http://localhost:${PYGEOAPI_PORT}}"
+      # Available to config.yml as ${...} for PostgreSQL resources.
+      POSTGRES_DB: "${POSTGRES_DB}"
+      GIS_READER_USER: "${GIS_READER_USER}"
+      GIS_READER_PASSWORD: "${GIS_READER_PASSWORD}"
+    volumes:
+      - ./config/pygeoapi:/pygeoapi/config:ro
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:80/conformance', timeout=5)"]
+      interval: 1m
+      retries: 3
+      timeout: 10s
+      start_period: 1m
+    depends_on: *depends-on-db
+
+  # ------------------------------------------------- tile & feature servers
+  pg_tileserv:
+    <<: *common
+    image: pramsey/pg_tileserv:${PG_TILESERV_VERSION}
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:${PG_TILESERV_PORT}:7800"
+    environment:
+      DATABASE_URL: *reader-db-url
+    depends_on: *depends-on-db
+
+  pg_featureserv:
+    <<: *common
+    image: pramsey/pg_featureserv:${PG_FEATURESERV_VERSION}
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:${PG_FEATURESERV_PORT}:9000"
+    environment:
+      DATABASE_URL: *reader-db-url
+    depends_on: *depends-on-db
+
+  martin:
+    <<: *common
+    image: ghcr.io/maplibre/martin:${MARTIN_VERSION}
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:${MARTIN_PORT}:3000"
+    environment:
+      DATABASE_URL: *reader-db-url
+    depends_on: *depends-on-db
+
+  tileserver-gl:
+    <<: *common
+    profiles: ["basemaps"]
+    image: maptiler/tileserver-gl:${TILESERVER_VERSION}
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:${TILESERVER_PORT}:8080"
+    volumes:
+      - ${DATA_DIR:-./data}/tileserver-gl:/data
+
+  # ---------------------------------------------------- client & utilities
   mapstore:
+    <<: *common
     image: geosolutionsit/mapstore2:${MAPSTORE_VERSION}
     ports:
-      - "${MAPSTORE_PORT}:8080"
-    volumes:
-      - ./config/geostore-datasource-ovr-postgres.properties:/usr/local/tomcat/conf/geostore-datasource-ovr.properties:ro
+      - "${BIND_ADDR:-0.0.0.0}:${MAPSTORE_PORT}:8080"
     environment:
-      JAVA_OPTS: "-Dgeostore-ovr=file:///usr/local/tomcat/conf/geostore-datasource-ovr.properties"
-    depends_on:
-      - postgis
-    restart: unless-stopped
-    networks:
-      - gis-network
-
-  postgis:
-    image: postgis/postgis:${POSTGIS_VERSION}
-    ports:
-      - "${POSTGIS_PORT}:5432"
+      # Replaces the image's JAVA_OPTS, so the heap and data dir are restated.
+      JAVA_OPTS: >-
+        -Xms512m -Xmx${MAPSTORE_MAX_MEMORY:-1g}
+        -Dgeostore-ovr=file:///usr/local/tomcat/conf/geostore-datasource-ovr.properties
+        -Ddatadir.location=/usr/local/tomcat/datadir
+      GEOSTORE_DB: "${GEOSTORE_DB}"
+      GEOSTORE_USER: "${GEOSTORE_USER}"
+      GEOSTORE_PASSWORD: "${GEOSTORE_PASSWORD}"
+    # Render the GeoStore datasource override from env vars, then start Tomcat.
+    command:
+      - sh
+      - -c
+      - |
+        cat > /usr/local/tomcat/conf/geostore-datasource-ovr.properties <<EOF
+        geostoreDataSource.driverClassName=org.postgresql.Driver
+        geostoreDataSource.url=jdbc:postgresql://postgis:5432/$$GEOSTORE_DB
+        geostoreDataSource.username=$$GEOSTORE_USER
+        geostoreDataSource.password=$$GEOSTORE_PASSWORD
+        geostoreEntityManagerFactory.jpaPropertyMap[hibernate.hbm2ddl.auto]=update
+        geostoreEntityManagerFactory.jpaPropertyMap[hibernate.dialect]=org.hibernate.dialect.PostgreSQLDialect
+        EOF
+        exec catalina.sh run
     volumes:
-      - ./data/postgis:/var/lib/postgresql/data:Z
-    environment:
-      POSTGRES_DB: "${POSTGRES_DB}"
-      POSTGRES_USER: "${POSTGRES_USER}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      - mapstore-datadir:/usr/local/tomcat/datadir
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} || exit 1"]
+      test: ["CMD-SHELL", "curl --fail --silent --output /dev/null http://localhost:8080/mapstore/ || exit 1"]
       interval: 1m
       retries: 3
       timeout: 20s
-    restart: unless-stopped
-    networks:
-      - gis-network
+      start_period: 2m
+    depends_on: *depends-on-db
 
   solr:
+    <<: *common
+    profiles: ["search"]
     image: solr:${SOLR_VERSION}
     ports:
-      - "${SOLR_PORT}:8983"
+      - "${BIND_ADDR:-0.0.0.0}:${SOLR_PORT}:8983"
+    environment:
+      SOLR_HEAP: "${SOLR_HEAP:-512m}"
     volumes:
-      - ./data/solr:/var/solr
-      - ./solr_conf:/solr_conf
-    command:
-      - solr-precreate
-      - blacklight-core
-      - /solr_conf
+      - ${DATA_DIR:-./data}/solr:/var/solr
+    # Uses Solr's built-in _default configset.
+    command: ["solr-precreate", "blacklight-core"]
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8983/solr/admin/cores?action=STATUS || exit 1"]
       interval: 1m
       retries: 3
       timeout: 10s
-    restart: unless-stopped
-    networks:
-      - gis-network
 
-  pg_tileserv:
-    image: pramsey/pg_tileserv:${PG_TILESERV_VERSION}
-    ports:
-      - "${PG_TILESERV_PORT}:7800"
-    environment:
-      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
-    depends_on:
-      - postgis
-    restart: unless-stopped
-    networks:
-      - gis-network
-
-  pg_featureserv:
-    image: pramsey/pg_featureserv:${PG_FEATURESERV_VERSION}
-    ports:
-      - "${PG_FEATURESERV_PORT}:9000"
-    environment:
-      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
-    depends_on:
-      - postgis
-    restart: unless-stopped
-    networks:
-      - gis-network
-
-  pgadmin:
-    image: dpage/pgadmin4:${PGADMIN_VERSION}
-    ports:
-      - "${PGADMIN_PORT}:80"
-    environment:
-      PGADMIN_DEFAULT_EMAIL: "${PGADMIN_DEFAULT_EMAIL}"
-      PGADMIN_DEFAULT_PASSWORD: "${PGADMIN_DEFAULT_PASSWORD}"
-    volumes:
-      - ./data/pgadmin:/var/lib/pgadmin
-    depends_on:
-      - postgis
-    restart: unless-stopped
-    networks:
-      - gis-network
-
-  tileserver-gl:
-    image: maptiler/tileserver-gl:${TILESERVER_VERSION}
-    ports:
-      - "${TILESERVER_PORT}:80"
-    volumes:
-      - ./data/tileserver-gl:/data
-    restart: unless-stopped
-    networks:
-      - gis-network
-
-  pygeoapi:
-    image: geopython/pygeoapi:${PYGEOAPI_VERSION}
-    ports:
-      - "${PYGEOAPI_PORT}:80"
-
-    environment:
-      PYGEOAPI_CONFIG: /pygeoapi/config/config.yml
-
-    volumes:
-      - ./config/pygeoapi:/pygeoapi/config:ro
-
-    depends_on:
-      - postgis
-
-    restart: unless-stopped
-
-    networks:
-      - gis-network
-
-  martin:
-    image: ghcr.io/maplibre/martin:${MARTIN_VERSION}
-    ports:
-      - "${MARTIN_PORT}:3000"
-    environment:
-      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
-    depends_on:
-      - postgis
-    restart: unless-stopped
-    networks:
-      - gis-network
-
-  tegola:
-    image: gospatial/tegola:${TEGOLA_VERSION}
-    command: ["serve", "--config", "/opt/tegola_config/config.toml"]
-    ports:
-      - "${TEGOLA_PORT}:8080"
-    volumes:
-      - ./config/tegola:/opt/tegola_config:ro
-    depends_on:
-      - postgis
-    restart: unless-stopped
-    networks:
-      - gis-network
-
-  mapfish:
-    image: camptocamp/mapfish_print:${MAPFISH_VERSION}
-    ports:
-      - "${MAPFISH_PORT}:8080"
-    volumes:
-      - ./config/mapfish/print-apps:/usr/local/tomcat/webapps/ROOT/print-apps:ro
-    restart: unless-stopped
-    networks:
-      - gis-network
+volumes:
+  # Named volume: initialised with the image's ownership (Tomcat runs as UID 20000).
+  mapstore-datadir:
 
 networks:
   gis-network:
+    # Fixed name so an external reverse proxy container can join it.
+    name: gis-network
     driver: bridge

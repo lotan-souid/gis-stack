@@ -1,11 +1,84 @@
+# pygeoapi configuration — https://docs.pygeoapi.io/en/latest/configuration.html
+# ${VAR} values are read from the container environment (see docker-compose.yml).
+
 server:
   bind:
     host: 0.0.0.0
     port: 80
+  # Public URL clients use to reach pygeoapi (set PYGEOAPI_SERVER_URL in .env
+  # when it sits behind a reverse proxy).
+  url: ${PYGEOAPI_SERVER_URL}
+  mimetype: application/json; charset=UTF-8
+  encoding: utf-8
+  gzip: false
+  languages:
+    - en-US
+  cors: true
+  pretty_print: true
+  limits:
+    default_items: 10
+    max_items: 1000
+  map:
+    url: https://tile.openstreetmap.org/{z}/{x}/{y}.png
+    attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+
+logging:
+  level: ERROR
 
 metadata:
   identification:
-    title: My GeoAPI
-    description: pygeoapi instance
+    title: GIS Stack OGC API
+    description: pygeoapi instance of the GIS Stack
+    keywords:
+      - geospatial
+      - api
+    keywords_type: theme
+    terms_of_service: https://creativecommons.org/licenses/by/4.0/
+    url: https://github.com/lotan-souid/gis-stack
+  license:
+    name: CC-BY 4.0 license
+    url: https://creativecommons.org/licenses/by/4.0/
+  provider:
+    name: GIS Stack
+    url: https://github.com/lotan-souid/gis-stack
+  contact:
+    name: GIS Stack admin
+    position: Administrator
+    address: ""
+    city: ""
+    stateorprovince: ""
+    postalcode: ""
+    country: ""
+    phone: ""
+    fax: ""
+    email: ""
+    url: https://github.com/lotan-souid/gis-stack
+    hours: ""
+    instructions: ""
+    role: pointOfContact
 
 resources: {}
+# Example — publish a PostGIS table (read-only role):
+#
+#  my_layer:
+#    type: collection
+#    title: My layer
+#    description: Features from public.my_layer
+#    keywords: [example]
+#    extents:
+#      spatial:
+#        bbox: [-180, -90, 180, 90]
+#        crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+#    providers:
+#      - type: feature
+#        name: PostgreSQL
+#        data:
+#          host: postgis
+#          port: 5432
+#          dbname: ${POSTGRES_DB}
+#          user: ${GIS_READER_USER}
+#          password: ${GIS_READER_PASSWORD}
+#          search_path: [public]
+#        id_field: id
+#        table: my_layer
+#        geom_field: geom

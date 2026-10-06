@@ -1,0 +1,27 @@
+name: Validate stack
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compose file is valid (all profiles)
+        run: |
+          docker compose --env-file .env.example \
+            --profile basemaps --profile search config --quiet
+
+      - name: Version is the same in VERSION, docker-compose.yml and README.md
+        run: |
+          v=$(tr -d '[:space:]' < VERSION)
+          grep -q "^x-gis-stack-version: \"$v\"$" docker-compose.yml
+          grep -q "^# Version: $v " docker-compose.yml
+          grep -q "^Version: \*\*$v\*\*" README.md
+          echo "version $v OK"
+
+      - name: Bootstrap script parses
+        run: sh -n config/postgis/bootstrap.sh

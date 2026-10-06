@@ -1,0 +1,2 @@
+# Scripts and configs are executed/read inside Linux containers: keep LF.
+* text=auto eol=lf
