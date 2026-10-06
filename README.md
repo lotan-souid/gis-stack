@@ -141,7 +141,14 @@ Container logs are rotated (json-file, 3 × 10 MB per service).
 | `${DATA_DIR}/pgadmin`            | pgAdmin settings               |
 | `${DATA_DIR}/tileserver-gl`      | MBTiles, styles, fonts         |
 | `${DATA_DIR}/solr`               | Solr cores                     |
-| volume `mapstore-datadir`        | MapStore data dir (named volume: the image runs as UID 20000) |
+| volume `gis-stack-mapstore-datadir` | MapStore data dir |
+
+Everything except MapStore is a **bind mount** under `DATA_DIR`, so the data
+is a plain directory on the host, easy to back up and inspect. MapStore uses a
+**named volume** because its image runs as UID 20000 and a named volume is
+created with the right ownership automatically. The volume has a fixed name
+(`gis-stack-mapstore-datadir`), so it does not depend on the Compose project or
+Portainer stack name.
 
 `data/` is git-ignored.
 
@@ -179,16 +186,28 @@ Healthchecks: PostGIS, GeoServer, pygeoapi, MapStore and Solr (defined here);
 Martin and TileServer-GL (built into their images). pg_tileserv and
 pg_featureserv ship minimal images without a shell, so they have none.
 
-MapStore's default login is `admin` / `admin` — change it on first use.
+### MapStore admin
+
+The first admin account is taken from `MAPSTORE_ADMIN_USER` /
+`MAPSTORE_ADMIN_PASSWORD` (the built-in `admin`/`admin` and `user`/`user`
+accounts are not created). GeoStore creates it **only on the first start**, while
+its user table is empty. Changing these variables later has no effect: change
+the password in MapStore (*Manage Accounts*) instead. To re-create the account
+from `.env`, drop and recreate the `geostore` database (this deletes all
+MapStore maps and users).
 
 ## Reverse proxy
 
 The stack does **not** include its own reverse proxy: put it behind the
 reverse proxy you already run, with TLS terminated there. Two ways to connect:
 
-- **Proxy on another host (or not in Docker):** proxy to
-  `http://<docker-host>:<port>` for each service. Keep `BIND_ADDR=0.0.0.0`, and
-  if possible restrict the ports to the proxy with the host firewall.
+- **Proxy on another host** (the usual home-lab setup): proxy to
+  `http://<docker-host-ip>:<port>` for each service, using the host ports in the
+  [Ports](#ports) table. Keep `BIND_ADDR=0.0.0.0` (or the Docker host's LAN IP).
+  Recommended: allow the web ports only from the proxy's IP in the Docker
+  host's firewall, so clients must go through the proxy. Note that Docker's
+  published ports bypass `ufw`'s default rules; filter them in the
+  `DOCKER-USER` iptables chain (or the router/VLAN firewall) instead.
 - **Proxy as a container on the same Docker host:** attach the proxy container
   to the external network `gis-network` and proxy to `http://<service>:<container-port>`
   (e.g. `http://geoserver:8080`, `http://martin:3000`). Then set
@@ -218,7 +237,7 @@ web authentication of their own.
 
 1. **Add the new variables** (see `.env.example`): `GIS_READER_USER`,
    `GIS_READER_PASSWORD`, `GEOSTORE_DB`, `GEOSTORE_USER`, `GEOSTORE_PASSWORD`,
-   and optionally `DATA_DIR`, `BIND_ADDR`, `COMPOSE_PROFILES`, memory settings.
+   `MAPSTORE_ADMIN_USER`, `MAPSTORE_ADMIN_PASSWORD`, and optionally `DATA_DIR`, `BIND_ADDR`, `COMPOSE_PROFILES`, memory settings.
    Remove `TEGOLA_*` and `MAPFISH_*`.
 2. **Keep your data path.** For Portainer, point `DATA_DIR` at the directory
    that currently holds `postgis/`, `geoserver/`, … (or move it there first).
@@ -300,7 +319,8 @@ stack editor or `docker compose config`).
 - **Breaking:** new required variables for the read-only role and the
   GeoStore database (see [Upgrading](#upgrading-from-7x-to-800)).
 - Security: tile/feature servers connect as read-only `gis_reader`; MapStore's
-  GeoStore uses its own database and role; no credentials in committed files;
+  GeoStore uses its own database and role; initial MapStore admin from `.env`
+  (no default `admin`/`admin`); no credentials in committed files;
   `BIND_ADDR` to limit published ports.
 - Reliability: `postgis-init` bootstrap job; services wait for a healthy
   database; new healthchecks (pygeoapi, MapStore); start periods; memory
@@ -309,7 +329,8 @@ stack editor or `docker compose config`).
   the built-in configset (the mounted `solr_conf/` was empty); MapStore keeps
   its default data dir (was dropped by the `JAVA_OPTS` override);
   TileServer-GL container port corrected (80 → 8080).
-- `DATA_DIR` for the data location; fixed network name `gis-network`.
+- `DATA_DIR` for the data location; fixed names for the network
+  (`gis-network`) and the MapStore volume (`gis-stack-mapstore-datadir`).
 - Compose file uses shared YAML anchors (`x-common`, …).
 - CI workflow, Renovate config, `.gitattributes` (LF line endings).
 

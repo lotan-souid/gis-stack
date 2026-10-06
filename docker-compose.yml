@@ -175,11 +175,25 @@ services:
       GEOSTORE_DB: "${GEOSTORE_DB}"
       GEOSTORE_USER: "${GEOSTORE_USER}"
       GEOSTORE_PASSWORD: "${GEOSTORE_PASSWORD}"
-    # Render the GeoStore datasource override from env vars, then start Tomcat.
+      MAPSTORE_ADMIN_USER: "${MAPSTORE_ADMIN_USER}"
+      MAPSTORE_ADMIN_PASSWORD: "${MAPSTORE_ADMIN_PASSWORD:?set MAPSTORE_ADMIN_PASSWORD}"
+    # Render the GeoStore datasource override and initial admin from env vars,
+    # then start Tomcat. GeoStore creates the admin only while its user table is
+    # empty (first start); later password changes are made in the MapStore UI.
     command:
       - sh
       - -c
       - |
+        cat > /usr/local/tomcat/conf/geostore-users.xml <<EOF
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <InitUserList>
+            <User>
+                <name>$$MAPSTORE_ADMIN_USER</name>
+                <newPassword>$$MAPSTORE_ADMIN_PASSWORD</newPassword>
+                <role>ADMIN</role>
+            </User>
+        </InitUserList>
+        EOF
         cat > /usr/local/tomcat/conf/geostore-datasource-ovr.properties <<EOF
         geostoreDataSource.driverClassName=org.postgresql.Driver
         geostoreDataSource.url=jdbc:postgresql://postgis:5432/$$GEOSTORE_DB
@@ -187,6 +201,7 @@ services:
         geostoreDataSource.password=$$GEOSTORE_PASSWORD
         geostoreEntityManagerFactory.jpaPropertyMap[hibernate.hbm2ddl.auto]=update
         geostoreEntityManagerFactory.jpaPropertyMap[hibernate.dialect]=org.hibernate.dialect.PostgreSQLDialect
+        geostoreInitializer.userListInitFile=file:/usr/local/tomcat/conf/geostore-users.xml
         EOF
         exec catalina.sh run
     volumes:
@@ -219,7 +234,9 @@ services:
 
 volumes:
   # Named volume: initialised with the image's ownership (Tomcat runs as UID 20000).
+  # Fixed name, independent of the Compose project / Portainer stack name.
   mapstore-datadir:
+    name: gis-stack-mapstore-datadir
 
 networks:
   gis-network:
