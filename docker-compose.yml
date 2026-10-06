@@ -1,3 +1,8 @@
+# GIS Stack — docker-compose.yml
+# Version: 7.0.0  (keep in sync with VERSION; see README "Versioning")
+
+x-gis-stack-version: "7.0.0"
+
 services:
   geoserver:
     image: docker.osgeo.org/geoserver:${GEOSERVER_VERSION}
