@@ -53,6 +53,10 @@ services:
     entrypoint: ["sh", "/bootstrap/bootstrap.sh"]
     volumes:
       - ./config/postgis:/bootstrap:ro
+    # The image declares VOLUME /var/lib/postgresql/data; this job never uses
+    # it, so a tmpfs stops Docker creating an anonymous volume.
+    tmpfs:
+      - /var/lib/postgresql/data
     environment:
       POSTGRES_DB: "${POSTGRES_DB}"
       POSTGRES_USER: "${POSTGRES_USER}"
@@ -74,6 +78,8 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: "${PGADMIN_DEFAULT_EMAIL}"
       PGADMIN_DEFAULT_PASSWORD: "${PGADMIN_DEFAULT_PASSWORD:?set PGADMIN_DEFAULT_PASSWORD}"
+      # Accept home-lab login emails such as admin@gis.local (rejected by default).
+      PGADMIN_CONFIG_ALLOW_SPECIAL_EMAIL_DOMAINS: "['local', 'lan', 'home.arpa']"
     volumes:
       - ${DATA_DIR:-./data}/pgadmin:/var/lib/pgadmin
     depends_on:
@@ -131,6 +137,9 @@ services:
       - "${BIND_ADDR:-0.0.0.0}:${PG_TILESERV_PORT}:7800"
     environment:
       DATABASE_URL: *reader-db-url
+    # Image declares VOLUME /config (empty; settings come from env).
+    tmpfs:
+      - /config
     depends_on: *depends-on-db
 
   pg_featureserv:
@@ -140,6 +149,11 @@ services:
       - "${BIND_ADDR:-0.0.0.0}:${PG_FEATURESERV_PORT}:9000"
     environment:
       DATABASE_URL: *reader-db-url
+    # Image declares VOLUME /config (empty) and /assets (HTML templates).
+    tmpfs:
+      - /config
+    volumes:
+      - pg-featureserv-assets:/assets
     depends_on: *depends-on-db
 
   martin:
@@ -237,9 +251,11 @@ volumes:
   # Fixed name, independent of the Compose project / Portainer stack name.
   mapstore-datadir:
     name: gis-stack-mapstore-datadir
+  # pg_featureserv's HTML templates, copied from the image on first use.
+  # Delete this volume after upgrading pg_featureserv to pick up new templates.
+  pg-featureserv-assets:
+    name: gis-stack-pg-featureserv-assets
 
 networks:
   gis-network:
-    # Fixed name so an external reverse proxy container can join it.
-    name: gis-network
     driver: bridge

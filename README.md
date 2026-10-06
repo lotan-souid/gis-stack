@@ -39,9 +39,9 @@ catalog in a **separate database** (`geostore`).
    Optional profiles:  basemaps → TileServer-GL     search → Solr
 ```
 
-All containers share one bridge network named `gis-network` (a fixed name, so
-an external reverse-proxy container can join it — see
-[Reverse proxy](#reverse-proxy)).
+All containers share one bridge network, `gis-network`. Docker prefixes it with
+the project/stack name (e.g. `gis-stack_gis-network`), so several copies of the
+stack on one host stay isolated from each other.
 
 ### Startup order
 
@@ -142,13 +142,23 @@ Container logs are rotated (json-file, 3 × 10 MB per service).
 | `${DATA_DIR}/tileserver-gl`      | MBTiles, styles, fonts         |
 | `${DATA_DIR}/solr`               | Solr cores                     |
 | volume `gis-stack-mapstore-datadir` | MapStore data dir |
+| volume `gis-stack-pg-featureserv-assets` | pg_featureserv HTML templates (from the image) |
 
-Everything except MapStore is a **bind mount** under `DATA_DIR`, so the data
-is a plain directory on the host, easy to back up and inspect. MapStore uses a
-**named volume** because its image runs as UID 20000 and a named volume is
-created with the right ownership automatically. The volume has a fixed name
-(`gis-stack-mapstore-datadir`), so it does not depend on the Compose project or
-Portainer stack name.
+Data is a **bind mount** under `DATA_DIR`, so it is a plain directory on the
+host, easy to back up and inspect. Two exceptions use **named volumes**:
+MapStore (its image runs as UID 20000; a named volume gets the right ownership
+automatically) and pg_featureserv's templates (the volume is pre-filled from
+the image). Both have fixed `gis-stack-*` names, independent of the Compose
+project or Portainer stack name. After upgrading pg_featureserv, delete
+`gis-stack-pg-featureserv-assets` so the new templates are copied in.
+
+**No anonymous volumes.** Some images declare `VOLUME` paths in their
+Dockerfile; any such path that the compose file does not mount becomes a volume
+with a random hash name. Every declared path is therefore mounted explicitly:
+data paths as bind mounts/named volumes, unused ones (`/config` in
+pg_tileserv/pg_featureserv, the database directory in `postgis-init`) as
+`tmpfs`. If hash-named volumes appear, they are leftovers from older versions
+and can be removed with `docker volume prune` once the stack is running.
 
 `data/` is git-ignored.
 
@@ -160,7 +170,7 @@ All published on `BIND_ADDR` (defaults shown):
 | -------------- | ----------------- |
 | GeoServer      | 8090              |
 | MapStore2      | 8091              |
-| PostGIS        | 5433              |
+| PostGIS        | 5432              |
 | pgAdmin        | 5050              |
 | pg_tileserv    | 7800              |
 | pg_featureserv | 9000              |
@@ -208,16 +218,14 @@ reverse proxy you already run, with TLS terminated there. Two ways to connect:
   host's firewall, so clients must go through the proxy. Note that Docker's
   published ports bypass `ufw`'s default rules; filter them in the
   `DOCKER-USER` iptables chain (or the router/VLAN firewall) instead.
-- **Proxy as a container on the same Docker host:** attach the proxy container
-  to the external network `gis-network` and proxy to `http://<service>:<container-port>`
-  (e.g. `http://geoserver:8080`, `http://martin:3000`). Then set
-  `BIND_ADDR=127.0.0.1` so nothing is exposed on the LAN.
+- **Proxy on the same Docker host:** set `BIND_ADDR=127.0.0.1` and proxy to
+  `http://127.0.0.1:<port>`, so nothing is exposed on the LAN.
 
 Behind a proxy, set `PYGEOAPI_SERVER_URL` to pygeoapi's public URL, and
 configure GeoServer's *Proxy Base URL* (Global settings) — otherwise both return
 links with internal addresses.
 
-Do not publish PostGIS (5433) or Solr (8983) through the proxy: they have no
+Do not publish PostGIS (5432) or Solr (8983) through the proxy: they have no
 web authentication of their own.
 
 ## Deploying with Portainer (from GitHub)
@@ -329,8 +337,9 @@ stack editor or `docker compose config`).
   the built-in configset (the mounted `solr_conf/` was empty); MapStore keeps
   its default data dir (was dropped by the `JAVA_OPTS` override);
   TileServer-GL container port corrected (80 → 8080).
-- `DATA_DIR` for the data location; fixed names for the network
-  (`gis-network`) and the MapStore volume (`gis-stack-mapstore-datadir`).
+- `DATA_DIR` for the data location; named volumes with fixed `gis-stack-*`
+  names and no anonymous (hash-named) volumes.
+- pgAdmin accepts `.local` / `.lan` / `.home.arpa` login emails.
 - Compose file uses shared YAML anchors (`x-common`, …).
 - CI workflow, Renovate config, `.gitattributes` (LF line endings).
 
