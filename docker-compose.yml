@@ -1,7 +1,7 @@
 # GIS Stack — docker-compose.yml
-# Version: 8.0.0  (keep in sync with VERSION; see README "Versioning")
+# Version: 8.0.1  (keep in sync with VERSION; see README "Versioning")
 
-x-gis-stack-version: "8.0.0"
+x-gis-stack-version: "8.0.1"
 
 # Settings shared by every service (merged with `<<: *common`).
 x-common: &common
@@ -100,6 +100,8 @@ services:
       GEOSERVER_ADMIN_PASSWORD: "${GEOSERVER_ADMIN_PASSWORD:?set GEOSERVER_ADMIN_PASSWORD}"
       INITIAL_MEMORY: "${GEOSERVER_INITIAL_MEMORY:-1G}"
       MAXIMUM_MEMORY: "${GEOSERVER_MAX_MEMORY:-2G}"
+      INSTALL_EXTENSIONS: "${GEOSERVER_STABLE_EXTENSIONS:+true}"
+      STABLE_EXTENSIONS: "${GEOSERVER_STABLE_EXTENSIONS:-}"
     healthcheck:
       test: ["CMD-SHELL", "curl --fail http://localhost:8080/geoserver/web/wicket/resource/org.geoserver.web.GeoServerBasePage/img/logo.png || exit 1"]
       interval: 1m

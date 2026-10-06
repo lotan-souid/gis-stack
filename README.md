@@ -1,6 +1,6 @@
 # GIS Stack
 
-Version: **8.0.0** · Repository: <https://github.com/lotan-souid/gis-stack>
+Version: **8.0.1** · Repository: <https://github.com/lotan-souid/gis-stack>
 
 A self-contained GIS platform delivered as a single Docker Compose stack. It
 bundles a spatial database with OGC services, vector-tile and feature servers,
@@ -130,6 +130,13 @@ Not started by default. Enable with `COMPOSE_PROFILES` (comma-separated) in
 | `MAPSTORE_MAX_MEMORY`                            | `1g`        |
 | `SOLR_HEAP`                                      | `512m`      |
 
+### GeoServer extensions
+
+Set `GEOSERVER_STABLE_EXTENSIONS` to a comma-separated list of extension names
+(see the [GeoServer Docker docs](https://docs.geoserver.org/main/en/user/installation/docker/)),
+e.g. `ogcapi-features`. They are downloaded from SourceForge on every container
+start, so the Docker host needs internet access. Leave it empty to install none.
+
 Container logs are rotated (json-file, 3 × 10 MB per service).
 
 ### Persistent data
@@ -233,13 +240,30 @@ web authentication of their own.
 1. In Portainer: **Stacks → Add stack → Repository**.
 2. Repository URL: `https://github.com/lotan-souid/gis-stack`; compose path:
    `docker-compose.yml`. Reference either `refs/heads/main` (latest) or a
-   release tag such as `refs/tags/8.0.0` (pinned, recommended for production).
+   release tag such as `refs/tags/8.0.1` (pinned, recommended for production).
 3. **Environment variables:** `.env` is git-ignored, so Portainer does not load
    it. Add the variables from `.env.example` under the stack's **Environment
    variables** section, and set `DATA_DIR` to an absolute host path
    (e.g. `/srv/gis-stack/data`) so data does not live inside Portainer's clone
    of the repository.
 4. Deploy. The `./config/*` files are served from the cloned repo.
+
+## Upgrading from 8.0.0 to 8.0.1
+
+Image updates only — set the new `*_VERSION` values from `.env.example` (and
+optionally `GEOSERVER_STABLE_EXTENSIONS`), then redeploy.
+
+- **GeoServer 2.28 → 3.0 is one-way.** The data directory format is unchanged,
+  but once 3.0 has written to it, going back to 2.28 is not supported.
+  **Back up `${DATA_DIR}/geoserver` first.**
+- GeoServer 3.0 moved the **WorldImage** and **ArcGrid** formats, **WCS 1.0/1.1**
+  and **KML output** to extensions, and removed the **H2** datastore. Layers
+  using them stop working until the extension is installed (via
+  `GEOSERVER_STABLE_EXTENSIONS`). In the bundled sample data this affects
+  `nurc:Img_Sample` and `nurc:Arc_Sample`. See the
+  [GeoServer 3 upgrade notes](https://docs.geoserver.org/main/en/user/installation/upgrade3/).
+- Log location is no longer set in the admin UI; it uses the
+  `GEOSERVER_LOG_LOCATION` property.
 
 ## Upgrading from 7.x to 8.0.0
 
@@ -282,9 +306,9 @@ The current version is recorded in three places, which must always match
 
 | Location                                                        | Form    |
 | --------------------------------------------------------------- | ------- |
-| `VERSION`                                                       | `8.0.0` |
-| `docker-compose.yml` (header comment and `x-gis-stack-version`) | `8.0.0` |
-| `README.md` (top of file)                                       | `8.0.0` |
+| `VERSION`                                                       | `8.0.1` |
+| `docker-compose.yml` (header comment and `x-gis-stack-version`) | `8.0.1` |
+| `README.md` (top of file)                                       | `8.0.1` |
 
 `x-gis-stack-version` is a Compose extension field: Docker Compose ignores it,
 but it shows which stack version a deployment came from (e.g. in Portainer's
@@ -318,6 +342,15 @@ stack editor or `docker compose config`).
    ```
 
 ## Changelog
+
+### 8.0.1
+- Image updates (all tested together):
+  GeoServer 2.28.2 → **3.0.1**, MapStore 2026.01.00 → **2026.02.01**,
+  pgAdmin 9.14.0 → **9.18.0**, pygeoapi 0.23.2 → **0.24.0**,
+  Martin 1.5.0 → **1.16.1**, Solr 9.6.1 → **9.10.1** (slim).
+- Unchanged (already latest in their line): PostGIS 17-3.5, pg_tileserv
+  20250131, pg_featureserv 20250917, TileServer-GL v5.6.0.
+- New `GEOSERVER_STABLE_EXTENSIONS` to install GeoServer extensions at startup.
 
 ### 8.0.0
 - **Breaking:** removed **Tegola** (overlaps pg_tileserv/Martin) and
