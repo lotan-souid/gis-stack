@@ -1,6 +1,6 @@
 # GIS Stack
 
-Version: **8.0.1** · Repository: <https://github.com/lotan-souid/gis-stack>
+Version: **8.0.2** · Repository: <https://github.com/lotan-souid/gis-stack>
 
 A self-contained GIS platform delivered as a single Docker Compose stack. It
 bundles a spatial database with OGC services, vector-tile and feature servers,
@@ -67,6 +67,7 @@ expected.
 | **PostGIS**      | Spatial database — the source of truth for all geometry data.           |
 | **postgis-init** | One-shot bootstrap job (roles, GeoStore database). Exits when done.     |
 | **pgAdmin**      | Web UI for administering the PostGIS database.                          |
+| **pgadmin-init** | One-shot job: makes `${DATA_DIR}/pgadmin` writable by pgAdmin (UID 5050). |
 
 ### OGC / API services
 
@@ -240,7 +241,7 @@ web authentication of their own.
 1. In Portainer: **Stacks → Add stack → Repository**.
 2. Repository URL: `https://github.com/lotan-souid/gis-stack`; compose path:
    `docker-compose.yml`. Reference either `refs/heads/main` (latest) or a
-   release tag such as `refs/tags/8.0.1` (pinned, recommended for production).
+   release tag such as `refs/tags/8.0.2` (pinned, recommended for production).
 3. **Environment variables:** `.env` is git-ignored, so Portainer does not load
    it. Add the variables from `.env.example` under the stack's **Environment
    variables** section, and set `DATA_DIR` to an absolute host path
@@ -306,9 +307,9 @@ The current version is recorded in three places, which must always match
 
 | Location                                                        | Form    |
 | --------------------------------------------------------------- | ------- |
-| `VERSION`                                                       | `8.0.1` |
-| `docker-compose.yml` (header comment and `x-gis-stack-version`) | `8.0.1` |
-| `README.md` (top of file)                                       | `8.0.1` |
+| `VERSION`                                                       | `8.0.2` |
+| `docker-compose.yml` (header comment and `x-gis-stack-version`) | `8.0.2` |
+| `README.md` (top of file)                                       | `8.0.2` |
 
 `x-gis-stack-version` is a Compose extension field: Docker Compose ignores it,
 but it shows which stack version a deployment came from (e.g. in Portainer's
@@ -342,6 +343,13 @@ stack editor or `docker compose config`).
    ```
 
 ## Changelog
+
+### 8.0.2
+- **Fix:** pgAdmin crash-looped at 100% CPU on a fresh install (`Permission
+  denied: /var/lib/pgadmin/sessions`). Docker creates a missing
+  `${DATA_DIR}/pgadmin` owned by root, but pgAdmin runs as UID 5050. New
+  one-shot `pgadmin-init` job fixes the ownership on every `up`; no manual
+  `chown` needed. Upgrade: just redeploy.
 
 ### 8.0.1
 - Image updates (all tested together):

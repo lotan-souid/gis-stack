@@ -1,7 +1,7 @@
 # GIS Stack — docker-compose.yml
-# Version: 8.0.1  (keep in sync with VERSION; see README "Versioning")
+# Version: 8.0.2  (keep in sync with VERSION; see README "Versioning")
 
-x-gis-stack-version: "8.0.1"
+x-gis-stack-version: "8.0.2"
 
 # Settings shared by every service (merged with `<<: *common`).
 x-common: &common
@@ -70,6 +70,18 @@ services:
       postgis:
         condition: service_healthy
 
+  # One-shot job, runs on every `up`: Docker creates a missing bind-mount
+  # directory owned by root, but pgAdmin runs as UID 5050 and crash-loops
+  # (100% CPU) if it cannot write there. Reuses the pgAdmin image.
+  pgadmin-init:
+    <<: *common
+    image: dpage/pgadmin4:${PGADMIN_VERSION}
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["chown", "-R", "5050:5050", "/var/lib/pgadmin"]
+    volumes:
+      - ${DATA_DIR:-./data}/pgadmin:/var/lib/pgadmin
+
   pgadmin:
     <<: *common
     image: dpage/pgadmin4:${PGADMIN_VERSION}
@@ -83,6 +95,8 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/pgadmin:/var/lib/pgadmin
     depends_on:
+      pgadmin-init:
+        condition: service_completed_successfully
       postgis:
         condition: service_healthy
 
