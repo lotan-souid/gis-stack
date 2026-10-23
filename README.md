@@ -236,6 +236,14 @@ links with internal addresses.
 Do not publish PostGIS (5432) or Solr (8983) through the proxy: they have no
 web authentication of their own.
 
+### GeoServer through Caddy and Cloudflare Tunnel
+
+See the [GeoServer domain access guide (Hebrew)](docs/GEOSERVER_DOMAIN_ACCESS_HE.md)
+for the deployment observed on 2026-10-23: HTTPS and SNI at the tunnel origin,
+trusted proxies, CSRF, the header-based Proxy Base URL, user resets on startup,
+and open checks. GeoServer 3.0.2 is selected in `.env.example`; this does not
+update an existing `.env`, Portainer environment, or running container.
+
 ## Deploying with Portainer (from GitHub)
 
 1. In Portainer: **Stacks → Add stack → Repository**.

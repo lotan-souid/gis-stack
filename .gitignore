@@ -19,3 +19,6 @@ Thumbs.db
 
 # Local archive of pre-6.0 versions (not part of the repo)
 gis-stack-archive/
+
+# Local review notes (not part of the repo)
+/local-reviews/
